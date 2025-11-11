@@ -1,7 +1,11 @@
+set -euo pipefail
+export CUDA_VISIBLE_DEVICES=0
+unset LOCAL_RANK RANK WORLD_SIZE MASTER_ADDR MASTER_PORT
+
 model_name=AutoTimes_Llama
 
 # training one model with a context length
-torchrun --nnodes 1 --nproc-per-node 8 run.py \
+python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
   --root_path ./dataset/traffic/ \
@@ -25,7 +29,7 @@ torchrun --nnodes 1 --nproc-per-node 8 run.py \
   --cosine \
   --tmax 10 \
   --mix_embeds \
-  --use_multi_gpu
+  --gpu 0 \
 
 # testing the model on all forecast lengths
 for test_pred_len in 96 192 336 720
@@ -55,5 +59,6 @@ python -u run.py \
   --cosine \
   --tmax 10 \
   --mix_embeds \
+  --visualize \
   --test_dir long_term_forecast_traffic_672_96_AutoTimes_Llama_custom_sl672_ll576_tl96_lr0.0001_bt256_wd1e-05_hd1024_hl2_cosTrue_mixTrue_test_0
 done
