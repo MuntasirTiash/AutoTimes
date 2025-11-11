@@ -1,7 +1,7 @@
 model_name=AutoTimes_Llama
 
 # training one model with a context length
-torchrun --nnodes 1 --nproc-per-node 4 run.py \
+python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
   --root_path ./dataset/Solar/ \
@@ -22,8 +22,8 @@ torchrun --nnodes 1 --nproc-per-node 4 run.py \
   --mlp_hidden_dim 1024 \
   --mlp_activation relu \
   --des 'Exp' \
-  --use_multi_gpu \
   --cosine \
+  --gpu 0 \
   --tmax 10
 
 # testing the model on all forecast lengths
@@ -51,6 +51,7 @@ python -u run.py \
   --mlp_activation relu \
   --des 'Exp' \
   --cosine \
+  --gpu 0 \
   --tmax 10 \
   --test_dir long_term_forecast_solar_672_96_AutoTimes_Llama_Solar_sl672_ll576_tl96_lr5e-06_bt256_wd0_hd1024_hl2_cosTrue_mixFalse_Exp_0
 done
