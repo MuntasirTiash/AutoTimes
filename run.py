@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
     # model define
     parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
-    parser.add_argument('--llm_ckp_dir', type=str, default='./llama', help='llm checkpoints dir')
+    parser.add_argument('--llm_ckp_dir', type=str, default='/largessd/home/muntasir/Desktop/AutoTimes/.models/llama-3.1-8b', help='llm checkpoints dir')
     parser.add_argument('--mlp_hidden_dim', type=int, default=256, help='mlp hidden dim')
     parser.add_argument('--mlp_hidden_layers', type=int, default=2, help='mlp hidden layers')
     parser.add_argument('--mlp_activation', type=str, default='tanh', help='mlp activation')
