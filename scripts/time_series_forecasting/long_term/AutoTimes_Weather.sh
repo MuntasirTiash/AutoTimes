@@ -1,7 +1,11 @@
+set -euo pipefail
+export CUDA_VISIBLE_DEVICES=0
+unset LOCAL_RANK RANK WORLD_SIZE MASTER_ADDR MASTER_PORT
+
 model_name=AutoTimes_Llama
 
 # training one model with a context length
-torchrun --nnodes 1 --nproc-per-node 4 run.py \
+python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
   --root_path ./dataset/weather/ \
@@ -23,7 +27,10 @@ torchrun --nnodes 1 --nproc-per-node 4 run.py \
   --des 'Exp' \
   --mlp_hidden_dim 512 \
   --mlp_activation relu \
-  --use_multi_gpu \
+  --gpu 0 \
+  --mlp_hidden_layers 2 \
+  --num_workers 4 \
+  --drop_last \
   --mix_embeds
 
 # testing the model on all forecast lengths
@@ -52,5 +59,9 @@ python -u run.py \
   --mlp_hidden_dim 512 \
   --mlp_activation relu \
   --mix_embeds \
+  --gpu 0 \
+  --mlp_hidden_layers 2 \
+  --num_workers 4 \
+  --drop_last \
   --test_dir long_term_forecast_weather_672_96_AutoTimes_Llama_custom_sl672_ll576_tl96_lr0.0005_bt384_wd0_hd512_hl2_cosFalse_mixTrue_Exp_0
 done
