@@ -34,6 +34,8 @@ if __name__ == '__main__':
     parser.add_argument('--drop_last',  action='store_true', default=False, help='drop last batch in data loader')
     parser.add_argument('--val_set_shuffle', action='store_false', default=True, help='shuffle validation set')
     parser.add_argument('--drop_short', action='store_true', default=False, help='drop too short sequences in dataset')
+    parser.add_argument('--save_arrays', action='store_true', default=False,
+                    help='Save preds/trues/timestamps as npz in test_results/<setting>')
 
     # forecasting task
     parser.add_argument('--seq_len', type=int, default=672, help='input sequence length')

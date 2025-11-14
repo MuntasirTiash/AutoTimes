@@ -59,7 +59,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         iter_count = 0
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
+            for i, batch in enumerate(vali_loader):
+                if len(batch) == 5:
+                    batch_x, batch_y, batch_x_mark, batch_y_mark, _times = batch
+                else:
+                    batch_x, batch_y, batch_x_mark, batch_y_mark = batch
                 iter_count += 1
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float()
@@ -215,6 +219,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         preds = []
         trues = []
+        times = []  
         folder_path = './test_results/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
@@ -223,7 +228,13 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         iter_count = 0
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
+            for i, batch in enumerate(test_loader):
+            #for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
+                if len(batch) == 5:
+                    batch_x, batch_y, batch_x_mark, batch_y_mark, batch_y_time = batch
+                else:
+                    batch_x, batch_y, batch_x_mark, batch_y_mark = batch
+                    batch_y_time = None
                 iter_count += 1
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
@@ -259,6 +270,13 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
                 preds.append(pred)
                 trues.append(true)
+                # NEW: store aligned timestamps for this batch (if provided)
+                if batch_y_time is not None:
+                    # batch_y_time shape: (B, label_len + pred_len)
+                    t = batch_y_time[:, -self.args.test_pred_len:]  # (B, test_pred_len)
+                    if isinstance(t, torch.Tensor):
+                        t = t.detach().cpu()
+                    times.append(t)
                 if (i + 1) % 100 == 0:
                     if (self.args.use_multi_gpu and self.args.local_rank == 0) or not self.args.use_multi_gpu:
                         speed = (time.time() - time_now) / iter_count
@@ -280,6 +298,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         
         preds = torch.cat(preds, dim=0).numpy()
         trues = torch.cat(trues, dim=0).numpy()
+        times = torch.cat(times, dim=0).numpy() if len(times) > 0 else None  # (N, test_pred_len)
+        # (Optional) save to disk if you’ve added a flag like --save_arrays
+        if getattr(self.args, 'save_arrays', False):
+            out_dir = os.path.join('./test_results', setting)
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, f'pred_truth_time_len{self.args.test_pred_len}.npz')
+            np.savez_compressed(out_path, preds=preds, trues=trues, times=times)
+            print(f'saved arrays -> {out_path}')
         
         mae, mse, rmse, mape, mspe = metric(preds, trues)
         print('mse:{}, mae:{}'.format(mse, mae))

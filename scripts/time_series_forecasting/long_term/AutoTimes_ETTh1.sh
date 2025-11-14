@@ -18,7 +18,7 @@ python -u run.py \
   --batch_size 256 \
   --learning_rate 0.0005 \
   --mlp_hidden_layers 0 \
-  --train_epochs 10 \
+  --train_epochs 2 \
   --use_amp \
   --gpu 0 \
   --cosine \
@@ -51,6 +51,7 @@ python -u run.py \
   --gpu 0 \
   --cosine \
   --tmax 10 \
+  --save_arrays \
   --mix_embeds \
   --drop_last \
   --test_dir long_term_forecast_ETTh1_672_96_AutoTimes_Llama_ETTh1_sl672_ll576_tl96_lr0.0005_bt256_wd0_hd256_hl0_cosTrue_mixTrue_test_0

@@ -59,6 +59,7 @@ class Dataset_ETT_hour(Dataset):
         self.data_stamp = self.data_stamp[border1:border2]
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
+        self.time_index = pd.to_datetime(df_raw.iloc[border1:border2, 0]).to_numpy()
 
     def __getitem__(self, index):
         feat_id = index // self.tot_len
@@ -72,6 +73,15 @@ class Dataset_ETT_hour(Dataset):
         seq_x_mark = self.data_stamp[s_begin:s_end:self.token_len]
         seq_y_mark = self.data_stamp[s_end:r_end:self.token_len]
 
+        is_test = (getattr(self, 'set_type', None) == 'test') or (getattr(self, 'flag', None) == 'test')
+        if is_test:
+            # label window timestamps, aligned to seq_y
+            seq_y_time = self.time_index[r_begin:r_end]
+            # convert to int64 nanoseconds so DataLoader can collate as LongTensor
+            seq_y_time = seq_y_time.astype('datetime64[ns]').astype('int64')
+            return seq_x, seq_y, seq_x_mark, seq_y_mark, torch.from_numpy(seq_y_time)
+
+        # train/val unchanged
         return seq_x, seq_y, seq_x_mark, seq_y_mark
 
     def __len__(self):
@@ -246,17 +256,57 @@ class Dataset_M4(Dataset):
 
         self.__read_data__()
 
+    # def __read_data__(self):
+    #     # M4Dataset.initialize()
+    #     if self.flag == 'train':
+    #         dataset = M4Dataset.load(training=True, dataset_file=self.root_path)
+    #     else:
+    #         dataset = M4Dataset.load(training=False, dataset_file=self.root_path)
+    #     # training_values = np.array(
+    #     #     [v[~np.isnan(v)] for v in
+    #     #      dataset.values[dataset.groups == self.seasonal_patterns]])  # split different frequencies
+    #     # self.ids = np.array([i for i in dataset.ids[dataset.groups == self.seasonal_patterns]])
+    #     # self.timeseries = [ts for ts in training_values]
+    #     training_values = [np.asarray(v[~np.isnan(v)], dtype=np.float32)
+    #                     for v in dataset.values[dataset.groups == self.seasonal_patterns]]
+        
+    #     self.timeseries = training_values
+
     def __read_data__(self):
-        # M4Dataset.initialize()
+        # Load the split
         if self.flag == 'train':
             dataset = M4Dataset.load(training=True, dataset_file=self.root_path)
         else:
             dataset = M4Dataset.load(training=False, dataset_file=self.root_path)
-        training_values = np.array(
-            [v[~np.isnan(v)] for v in
-             dataset.values[dataset.groups == self.seasonal_patterns]])  # split different frequencies
-        self.ids = np.array([i for i in dataset.ids[dataset.groups == self.seasonal_patterns]])
-        self.timeseries = [ts for ts in training_values]
+
+        # Keep only the chosen seasonal pattern
+        mask = (dataset.groups == self.seasonal_patterns)
+
+        # ---- IDs (must align with timeseries order) ----
+        ids = dataset.ids[mask]
+        # normalize dtype to string/object (handles possible bytes)
+        try:
+            ids = ids.astype(str)
+        except Exception:
+            ids = np.array([str(i) for i in ids], dtype=object)
+        self.ids = np.asarray(ids, dtype=object)  # e.g., ['Y1','Y2',...]
+
+        # ---- Values as a ragged list of 1-D float arrays ----
+        series_list = []
+        ids_list = []
+        for i, v in zip(self.ids, dataset.values[mask]):
+            arr = np.asarray(v[~np.isnan(v)], dtype=np.float32)
+            if arr.size == 0:
+                # drop empty series to keep alignment with predictions
+                continue
+            series_list.append(arr)
+            ids_list.append(i)
+
+        self.timeseries = series_list
+        self.ids = np.asarray(ids_list, dtype=object)
+
+        # Optional sanity check:
+        assert len(self.timeseries) == len(self.ids), "ids and timeseries length mismatch"
 
     def __getitem__(self, index):
         insample = np.zeros((self.seq_len, 1))

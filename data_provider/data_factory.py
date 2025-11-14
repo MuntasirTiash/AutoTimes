@@ -48,6 +48,7 @@ def data_provider(args, flag):
         )
     if (args.use_multi_gpu and args.local_rank == 0) or not args.use_multi_gpu:
         print(flag, len(data_set))
+        #print("[DEBUG] using", DatasetClass.__name__, "for flag=test")
     if args.use_multi_gpu:
         train_datasampler = DistributedSampler(data_set, shuffle=shuffle_flag)
         data_loader = DataLoader(data_set, 
