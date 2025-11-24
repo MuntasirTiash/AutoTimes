@@ -503,3 +503,199 @@ class Dataset_Preprocess(Dataset):
 
     def __len__(self):
         return len(self.data_stamp)
+
+    
+class Dataset_EPSPanel(Dataset):
+    """
+    Panel EPS dataset:
+      - CSV with columns: gvkey, DATE, actual
+      - Univariate EPS forecasting (no extra features)
+      - Window-based train/val/test split:
+          * history can use all past data
+          * split is decided by the date of the FIRST predicted quarter
+      - Z-scales EPS using TRAIN subset only, with inverse_transform support.
+    """
+    def __init__(self, root_path, flag='train', size=None,
+                 data_path='eps_panel.csv',
+                 scale=True,
+                 firm_col='gvkey',
+                 date_col='DATE',
+                 target_col='actual',
+                 train_end='2014-12-31',
+                 val_end='2017-12-31',
+                 return_meta=False):
+        """
+        size: (seq_len, label_len, pred_len)
+        flag: 'train', 'val', or 'test'
+        train_end, val_end: split boundaries (based on FIRST predicted quarter)
+        return_meta:
+          - False: __getitem__ returns (seq_x, seq_y, seq_x_mark, seq_y_mark)
+          - True:  returns (..., firm_id, target_quarters)
+        """
+        assert flag in ['train', 'val', 'test']
+        self.flag = flag
+        self.return_meta = return_meta
+
+        if size is None:
+            # you will usually override this via args
+            self.seq_len = 16
+            self.label_len = 8
+            self.pred_len = 4
+        else:
+            self.seq_len, self.label_len, self.pred_len = size
+
+        self.scale = scale
+        self.root_path = root_path
+        self.data_path = data_path
+
+        self.firm_col = firm_col
+        self.date_col = date_col
+        self.target_col = target_col
+
+        self.train_end = pd.to_datetime(train_end)
+        self.val_end = pd.to_datetime(val_end)
+
+        # scaler + stats
+        self.scaler = None
+        self.eps_mean = None
+        self.eps_std = None
+
+        # per-firm storage
+        self.series_values = []    # original EPS per firm (np.array)
+        self.series_scaled = []    # scaled EPS per firm (np.array)
+        self.series_dates = []     # np.array of datetimes per firm
+        self.series_firm_ids = []  # firm_id per firm
+
+        # window index list: each element is (series_idx, start_pos)
+        self.indices = []
+
+        self.__read_data__()
+
+        # univariate series
+        self.enc_in = 1
+
+    def __read_data__(self):
+        # ----- load full panel for ALL splits -----
+        df = pd.read_csv(os.path.join(self.root_path, self.data_path))
+        df = df[[self.firm_col, self.date_col, self.target_col]].dropna()
+
+        df[self.date_col] = pd.to_datetime(df[self.date_col])
+        df = df.sort_values([self.firm_col, self.date_col])
+
+        # ----- fit scaler on TRAIN subset only -----
+        if self.scale:
+            from sklearn.preprocessing import StandardScaler
+            train_mask = df[self.date_col] <= self.train_end
+            df_train = df.loc[train_mask]
+
+            self.scaler = StandardScaler()
+            self.scaler.fit(df_train[[self.target_col]].values)
+
+            # cache mean/std for convenience
+            self.eps_mean = float(self.scaler.mean_[0])
+            self.eps_std = float(self.scaler.scale_[0])
+        else:
+            self.scaler = None
+            self.eps_mean = 0.0
+            self.eps_std = 1.0
+
+        # ----- build full per-firm series (values + dates) -----
+        for firm_id, g in df.groupby(self.firm_col):
+            vals_all = g[self.target_col].values.astype('float32')
+            dates_all = g[self.date_col].values
+
+            # need at least one full window somewhere
+            if len(vals_all) < self.seq_len + self.pred_len:
+                continue
+
+            if self.scale:
+                vals_scaled = self.scaler.transform(
+                    vals_all.reshape(-1, 1)
+                ).reshape(-1).astype('float32')
+            else:
+                vals_scaled = vals_all.copy()
+
+            self.series_values.append(vals_all)      # original EPS
+            self.series_scaled.append(vals_scaled)   # scaled EPS
+            self.series_dates.append(dates_all)
+            self.series_firm_ids.append(firm_id)
+
+        # ----- build window indices and assign to train/val/test -----
+        self.indices = []
+        for s_idx, vals_scaled in enumerate(self.series_scaled):
+            dates_all = self.series_dates[s_idx]
+            L = len(vals_scaled)
+
+            # possible start positions for history window
+            max_start = L - (self.seq_len + self.pred_len) + 1
+            if max_start < 1:
+                continue
+
+            for start in range(max_start):
+                # define the standard AutoTimes segmentation
+                s_begin = start
+                s_end = start + self.seq_len
+
+                r_begin = s_end - self.label_len
+                r_end = r_begin + self.label_len + self.pred_len
+                # safety check
+                if r_end > L:
+                    continue
+
+                # forecast part is the last pred_len of [r_begin:r_end]
+                pred_start_idx = r_begin + self.label_len
+                d_first_pred = dates_all[pred_start_idx]
+
+                # assign window based on FIRST predicted quarter
+                if self.flag == 'train':
+                    if d_first_pred <= self.train_end:
+                        self.indices.append((s_idx, start))
+                elif self.flag == 'val':
+                    if (d_first_pred > self.train_end) and (d_first_pred <= self.val_end):
+                        self.indices.append((s_idx, start))
+                else:  # 'test'
+                    if d_first_pred > self.val_end:
+                        self.indices.append((s_idx, start))
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, index):
+        s_idx, start = self.indices[index]
+
+        vals_scaled = self.series_scaled[s_idx]
+        dates = self.series_dates[s_idx]
+        firm_id = self.series_firm_ids[s_idx]
+
+        s_begin = start
+        s_end = start + self.seq_len
+
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        # sequences in z-scale (univariate)
+        seq_x = vals_scaled[s_begin:s_end].reshape(-1, 1)          # [seq_len, 1]
+        seq_y = vals_scaled[r_begin:r_end].reshape(-1, 1)          # [label_len+pred_len, 1]
+
+        # corresponding dates (label + pred window)
+        target_quarters = dates[r_begin:r_end]
+
+        # no time features yet (can add later)
+        seq_x_mark = np.zeros((self.seq_len, 1), dtype='float32')
+        seq_y_mark = np.zeros((self.label_len + self.pred_len, 1), dtype='float32')
+
+        if self.return_meta:
+            # used in test: we want to know firm_id and exact quarters
+            return seq_x, seq_y, seq_x_mark, seq_y_mark, firm_id, target_quarters
+        else:
+            # used in train/val: keep exactly the 4-tuple interface
+            return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def inverse_transform(self, data):
+        """
+        data: array or tensor of EPS in z-scale.
+        returns: same shape in original EPS units.
+        """
+        if not self.scale:
+            return data
+        return data * self.eps_std + self.eps_mean

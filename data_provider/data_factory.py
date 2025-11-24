@@ -1,4 +1,4 @@
-from data_provider.data_loader import Dataset_ETT_hour, Dataset_Custom, Dataset_M4, Dataset_Solar, Dataset_TSF, Dataset_TSF_ICL
+from data_provider.data_loader import Dataset_ETT_hour, Dataset_Custom, Dataset_M4, Dataset_Solar, Dataset_TSF, Dataset_TSF_ICL, Dataset_EPSPanel
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
@@ -8,7 +8,8 @@ data_dict = {
     'm4': Dataset_M4,
     'Solar': Dataset_Solar,
     'tsf': Dataset_TSF,
-    'tsf_icl': Dataset_TSF_ICL
+    'tsf_icl': Dataset_TSF_ICL,
+    'EPS': Dataset_EPSPanel,
 }
 
 
@@ -27,6 +28,31 @@ def data_provider(args, flag):
         shuffle_flag = True
         drop_last = args.drop_last
         batch_size = args.batch_size
+    if args.data == 'EPS':
+        # return_meta only at test time
+        return_meta = (flag == 'test')
+
+        pred_len = args.test_pred_len
+
+        data_set = Data(
+            root_path=args.root_path,
+            flag=flag,
+            size=[args.seq_len, args.label_len, pred_len],
+            data_path=args.data_path,          # e.g. "eps_panel.csv"
+            train_end=getattr(args, 'train_end_date', '2014-12-31'),
+            val_end=getattr(args, 'val_end_date', '2017-12-31'),
+            return_meta=return_meta,
+        )
+        print(flag, len(data_set))
+
+        data_loader = DataLoader(
+            data_set,
+            batch_size=batch_size,
+            shuffle=shuffle_flag,
+            num_workers=args.num_workers,
+            drop_last=drop_last
+        )
+        return data_set, data_loader
 
     if flag in ['train', 'val']:
         data_set = Data(

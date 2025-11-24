@@ -46,6 +46,20 @@ if __name__ == '__main__':
     parser.add_argument('--test_pred_len', type=int, default=96, help='test pred len')
     parser.add_argument('--seasonal_patterns', type=str, default='Monthly', help='subset for M4')
 
+    parser.add_argument(
+    '--train_end_date',
+    type=str,
+    default='2014-12-31',
+    help='cutoff date between train and val/test for EPS panel dataset',
+    )
+
+    parser.add_argument(
+        '--val_end_date',
+        type=str,
+        default='2017-12-31',
+        help='cutoff date between val and test for EPS panel dataset',
+    )
+
     # model define
     parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
     parser.add_argument('--llm_ckp_dir', type=str, default='/largessd/home/muntasir/Desktop/AutoTimes/.models/llama-3.1-8b', help='llm checkpoints dir')
